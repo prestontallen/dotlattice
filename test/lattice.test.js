@@ -103,6 +103,11 @@ test('autoTicks: unit choice, boundaries, and spacing', () => {
   const mo = autoTicks(Date.UTC(2026, 8, 15), Date.UTC(2026, 11, 15), 30 * d, 'month');
   assert.deepEqual(mo.map((x) => x.t), [Date.UTC(2026, 9, 1), Date.UTC(2026, 10, 1), Date.UTC(2026, 11, 1)]);
 
+  // 24-hour clock by default; hour12: true switches time labels to AM/PM
+  assert.ok(hours.every((tk) => !/AM|PM/.test(tk.label)), 'default labels are 24-hour');
+  const ampm = autoTicks(t0, t0 + 2 * h, h, 'auto', true);
+  assert.ok(ampm.every((tk) => /AM|PM/.test(tk.label)), 'hour12 labels are AM/PM');
+
   // degenerate span
   assert.deepEqual(autoTicks(5, 5, 1, 'auto'), []);
 });

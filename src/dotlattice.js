@@ -48,8 +48,8 @@ function injectStyle() {
   styleInjected = true;
 }
 
-function fmtStamp(ms) {
-  return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function fmtStamp(ms, hour12 = false) {
+  return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12 });
 }
 function fmtDur(ms) {
   if (ms < 60000) return '<1m';
@@ -60,13 +60,13 @@ function fmtDur(ms) {
   const d = Math.floor(h / 24);
   return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
 }
-function defaultTooltip(b, bucketMs) {
+function defaultTooltip(b, bucketMs, hour12 = false) {
   const parts = [];
   for (const [g, sides] of Object.entries(b.groups)) {
     const n = Object.values(sides).reduce((a, v) => a + v, 0);
     parts.push(`${n} ${g}${n === 1 ? '' : 's'}`);
   }
-  return `${fmtStamp(b.start)} +${fmtDur(bucketMs)}\n${parts.join(', ')}`;
+  return `${fmtStamp(b.start, hour12)} +${fmtDur(bucketMs)}\n${parts.join(', ')}`;
 }
 
 export class DotLattice {
@@ -88,6 +88,7 @@ export class DotLattice {
   //   axis        [{t, label}]
   //   autoAxis    'auto' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'off' —
   //               time-axis ticks generated for the current span (replaces axis)
+  //   hour12      true for AM/PM time labels; default is 24-hour clock
   //   brush       true: drag-select a time range to zoom; fires onSelect
   //   onSelect     (view | null) => void — view is {from, to} in ms; null on
   //               reset (empty click / Escape / dblclick)
@@ -97,7 +98,7 @@ export class DotLattice {
   constructor(el, opts = {}) {
     this.el = typeof el === 'string' ? document.querySelector(el) : el;
     if (!this.el) throw new Error('dotlattice: no target element');
-    this.opts = { cell: 8, dot: 2.5, shape: 'circle', maxRows: 12, gap: 10, ...opts };
+    this.opts = { cell: 8, dot: 2.5, shape: 'circle', maxRows: 12, gap: 10, hour12: false, ...opts };
     this.events = [];
     this.quantum = 1;
     this.view = null;            // {from, to} zoom window, or null = full span
@@ -269,13 +270,13 @@ export class DotLattice {
     // they never overlap — an axis is one row, dense labels are dropped,
     // not re-rowed. When zoomed, the right edge is reserved for the range
     // readout drawn there.
-    const zoomText = zoomed ? `${fmtStamp(s.min)} → ${fmtStamp(s.max)}` : '';
+    const zoomText = zoomed ? `${fmtStamp(s.min, o.hour12)} → ${fmtStamp(s.max, o.hour12)}` : '';
     const axisRight = zoomed
       ? Math.max(width - (zoomText.length * AXIS_PX + 8), 40)
       : width;
     const axis = thinAxis(
       (o.autoAxis && o.autoAxis !== 'off'
-        ? autoTicks(s.min, s.max, bucketMs, o.autoAxis)
+        ? autoTicks(s.min, s.max, bucketMs, o.autoAxis, o.hour12)
         : (o.axis ?? [])
       ).map((a) => ({ ...a, x: x(toMs(a.t)), w: String(a.label).length * AXIS_PX })),
       axisRight, 6
@@ -347,7 +348,7 @@ export class DotLattice {
           dots += this._dot(cx, cy, colors[dt.group], opacity);
         });
       }
-      parts.push(`<g class="dl-col">${dots}<rect class="dl-hit" x="${b.i * o.cell}" y="${TOP}" width="${o.cell}" height="${lowY - TOP}"><title>${esc(tooltip(b, bucketMs))}</title></rect></g>`);
+      parts.push(`<g class="dl-col">${dots}<rect class="dl-hit" x="${b.i * o.cell}" y="${TOP}" width="${o.cell}" height="${lowY - TOP}"><title>${esc(tooltip(b, bucketMs, o.hour12))}</title></rect></g>`);
     }
 
     parts.push('</svg>');

@@ -77,9 +77,9 @@ export function rowsFor(buckets, quantum, groupOrder) {
 // ticks on that unit's natural UTC boundaries (a day tick lands at UTC
 // midnight, a month tick on the 1st). Returns [{t, label}].
 const UNITS = [
-  { name: 'millisecond', ms: 1, fmt: (d) => d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', second: '2-digit' }) },
-  { name: 'minute',     ms: 60e3, fmt: (d) => d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }) },
-  { name: 'hour',       ms: 3600e3, fmt: (d) => d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }) },
+  { name: 'millisecond', ms: 1, fmt: (d, h12) => d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: h12 }) },
+  { name: 'minute',     ms: 60e3, fmt: (d, h12) => d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: h12 }) },
+  { name: 'hour',       ms: 3600e3, fmt: (d, h12) => d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: h12 }) },
   { name: 'day',        ms: 86400e3, fmt: (d) => d.toLocaleDateString([], { timeZone: 'UTC', month: 'short', day: 'numeric' }) },
   { name: 'week',       ms: 7 * 86400e3, fmt: (d) => d.toLocaleDateString([], { timeZone: 'UTC', month: 'short', day: 'numeric' }) },
   { name: 'month',      ms: 30 * 86400e3, fmt: (d) => d.toLocaleDateString([], { timeZone: 'UTC', month: 'short', year: '2-digit' }) },
@@ -112,7 +112,7 @@ function nextBoundary(unit, t) {
   }
 }
 
-export function autoTicks(min, max, bucketMs, unit = 'auto') {
+export function autoTicks(min, max, bucketMs, unit = 'auto', hour12 = false) {
   if (!(max > min)) return [];
   const u = UNITS.find((x) => x.name === unit);
   let def = u;
@@ -128,7 +128,7 @@ export function autoTicks(min, max, bucketMs, unit = 'auto') {
   if (t < min) t = nextBoundary(def.name, t);
   // never more than one tick per column
   for (let i = 0; t <= max && i < 1e4; i++) {
-    out.push({ t, label: def.fmt(new Date(t)) });
+    out.push({ t, label: def.fmt(new Date(t), hour12) });
     t = nextBoundary(def.name, t);
   }
   return out;

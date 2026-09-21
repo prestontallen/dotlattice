@@ -147,7 +147,7 @@
     ]);
     // ---- 4: brush zoom + rollup ------------------------------------------
     const fmtView = (v) => v
-      ? `${new Date(v.from).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} – ${new Date(v.to).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+      ? `${new Date(v.from).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })} – ${new Date(v.to).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}`
       : 'full range';
     const viewRead = document.getElementById('s4view');
     // ~90 days of messy activity: daily rhythm, a busy stretch, a quiet spell

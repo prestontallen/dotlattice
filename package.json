@@ -1,6 +1,6 @@
 {
   "name": "dotlattice",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pixel-style dot-lattice time series chart. One SVG, zero dependencies.",
   "type": "module",
   "main": "src/dotlattice.js",

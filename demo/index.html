@@ -73,8 +73,28 @@
     <div id="chart4"></div>
   </section>
 
+  <section>
+    <h2>5 · ticks on hover</h2>
+    <p class="desc">The same week with twenty gates: <code>tickLabels: 'hover'</code> collapses each column's ticks to one marker under the plot. Hover a marker for its dash and labels; a column with several ticks stacks them. <code>maxLabelRows</code> caps the space reserved.</p>
+    <div class="controls">
+      <label>tickLabels <select id="s5mode"><option value="hover">hover</option><option value="always">always</option></select></label>
+      <label>maxLabelRows <input type="range" id="s5rows" min="1" max="8" value="4"></label>
+      <span id="s5read" style="color: var(--text-dim);"></span>
+    </div>
+    <div id="chart5"></div>
+  </section>
+
+  <section>
+    <h2>6 · lanes</h2>
+    <p class="desc">Rows of phase bars over the same span and ruling as a lattice: one lane per card, a hatched kind for blocked, one axis strip, click a label. Hover a bar for its kind and duration.</p>
+    <div id="chart6-lattice"></div>
+    <div id="chart6" style="margin-top: 10px;"></div>
+    <div class="legend" id="leg6"></div>
+    <p class="desc" id="s6read" style="margin-top: 8px;"></p>
+  </section>
+
   <script type="module">
-    import { DotLattice } from '../src/dotlattice.js';
+    import { DotLattice, Lanes } from '../src/dotlattice.js';
 
     // ---- 1: grouping ---------------------------------------------------
     const GROUPS = [
@@ -175,6 +195,53 @@
     document.getElementById('s4unit').addEventListener('change', (e) => c4.setOptions({ autoAxis: e.target.value }));
     document.getElementById('s4shape').addEventListener('change', (e) => c4.setOptions({ shape: e.target.value }));
     document.getElementById('s4reset').addEventListener('click', () => c4.setView(null, null));
+
+    // ---- 5: ticks on hover ----------------------------------------------
+    const CARDS = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta'];
+    const gates5 = [];
+    for (let i = 0; i < 20; i++) {
+      const t = base + (i < 12 ? 1.2 * day + (i % 3) * 3600e3 : 4.5 * day + (i % 4) * 5 * 3600e3);
+      const g = i % 3 === 0 ? 'contract' : i % 3 === 1 ? 'presented' : 'shipped';
+      gates5.push({ t, label: '✠ ' + g, sig: CARDS[i % CARDS.length], color: g === 'contract' ? '#e0af68' : '#9b9', title: `${g} · ${CARDS[i % CARDS.length]}` });
+    }
+    const s5read = document.getElementById('s5read');
+    const c5 = new DotLattice(document.getElementById('chart5'), {
+      groups: GROUPS, sides: { human: 'up', agent: 'down' }, ticks: gates5, tickLabels: 'hover',
+      axis: Array.from({ length: 7 }, (_, i) => ({ t: base + i * day, label: new Date(base + i * day).toLocaleDateString([], { weekday: 'short' }).toUpperCase() })),
+    });
+    c5.setData(evs1.map(e => ({ ...e, side: Math.random() < 0.35 ? 'human' : 'agent' })));
+    document.getElementById('s5mode').addEventListener('change', (e) => c5.setOptions({ tickLabels: e.target.value }));
+    document.getElementById('s5rows').addEventListener('input', (e) => c5.setOptions({ maxLabelRows: +e.target.value }));
+    document.getElementById('chart5').addEventListener('click', (e) => {
+      const tk = e.target.closest('.dl-tick');
+      if (tk) s5read.textContent = `clicked tick ${tk.dataset.index}: ${gates5.slice().sort((a, b) => a.t - b.t)[tk.dataset.index].title}`;
+    });
+
+    // ---- 6: lanes ------------------------------------------------------
+    const PHASES = { queued: '#3b4261', shaping: '#7dcfff', building: '#7aa2f7', checking: '#e0af68', shipping: '#9ece6a', blocked: { color: '#f7768e', hatch: '#5a2a33' } };
+    const order = ['queued', 'shaping', 'building', 'checking', 'shipping'];
+    const lanes6 = CARDS.slice(0, 6).map((name) => {
+      const bars = [];
+      let t = base + Math.random() * 2 * day, p = 0;
+      while (t < base + 7 * day && p < order.length) {
+        const len = (0.4 + Math.random() * 1.6) * day;
+        bars.push({ start: t, end: t + len, kind: order[p] });
+        t += len;
+        if (Math.random() < 0.3) { const b = (0.2 + Math.random()) * day; bars.push({ start: t, end: t + b, kind: 'blocked' }); t += b; }
+        p++;
+      }
+      return { id: name, label: name, title: `card ${name}`, bars };
+    });
+    const span6 = { min: base, max: base + 7 * day };
+    const axis6 = Array.from({ length: 8 }, (_, i) => ({ t: base + i * day, label: new Date(base + i * day).toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase() }));
+    new DotLattice(document.getElementById('chart6-lattice'), { groups: GROUPS, span: span6, axis: axis6, maxRows: 6 }).setData(evs1);
+    const s6read = document.getElementById('s6read');
+    new Lanes(document.getElementById('chart6'), {
+      span: span6, kinds: PHASES, labelWidth: 90, axis: axis6,
+      onLabel: (lane) => { s6read.textContent = `label clicked: ${lane.title}`; },
+    }).setData(lanes6);
+    document.getElementById('leg6').innerHTML = Object.entries(PHASES).map(([k, v]) =>
+      `<span class="sq" style="--c:${typeof v === 'string' ? v : `repeating-linear-gradient(45deg, ${v.color} 0 2px, ${v.hatch} 2px 4px)`}">${k}</span>`).join('');
   </script>
 </main>
 </body>

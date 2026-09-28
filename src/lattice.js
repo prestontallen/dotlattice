@@ -7,6 +7,11 @@
 //   group — categorical series (drives color + stacking order), default 'default'
 //   side  — which side of the baseline the event stacks on, default 'up'
 
+export const DEFAULT_PALETTE = [
+  '#7aa2f7', '#9ece6a', '#e0af68', '#f7768e',
+  '#bb9af7', '#7dcfff', '#ff9e64', '#73daca',
+];
+
 export function toMs(t) {
   if (t instanceof Date) return t.getTime();
   if (typeof t === 'number') return t;
@@ -150,6 +155,34 @@ export function thinAxis(items, width, gap = 6) {
     if (left < right + gap) continue;
     right = left + it.w;
     out.push({ ...it, left, anchor, tx: anchor === 'middle' ? it.x : anchor === 'start' ? 0 : width });
+  }
+  return out;
+}
+
+// A duration for a tooltip: <1m, 12m, 3h 5m, 2d 4h.
+export function fmtDur(ms) {
+  if (ms < 60000) return '<1m';
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
+}
+
+// Lane bars clipped to a span: {start, end, kind, ...} in, the ones that
+// overlap [min, max] out, with start/end clamped and x0/x1 as fractions
+// of the span so a renderer multiplies by its width. A bar that ends
+// before the span or starts after it is dropped; a zero-length one too.
+export function laneBars(bars, min, max) {
+  const W = max - min;
+  if (!(W > 0)) return [];
+  const out = [];
+  for (const b of bars ?? []) {
+    const start = Math.max(toMs(b.start), min);
+    const end = Math.min(toMs(b.end), max);
+    if (!(end > start)) continue;
+    out.push({ ...b, start, end, x0: (start - min) / W, x1: (end - min) / W });
   }
   return out;
 }

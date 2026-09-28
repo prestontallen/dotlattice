@@ -8,16 +8,14 @@
 // translucent highlight window, axis labels along the top, and a hover
 // hit-target per column with a tooltip.
 
-import { bucketize, quantumFor, stack, rowsFor, stackLabels, toMs, autoTicks, thinAxis } from './lattice.js';
-
-export const DEFAULT_PALETTE = [
-  '#7aa2f7', '#9ece6a', '#e0af68', '#f7768e',
-  '#bb9af7', '#7dcfff', '#ff9e64', '#73daca',
-];
+import { bucketize, quantumFor, stack, rowsFor, stackLabels, toMs, autoTicks, thinAxis, fmtDur, DEFAULT_PALETTE } from './lattice.js';
+export { DEFAULT_PALETTE } from './lattice.js';
+export { Lanes } from './lanes.js';
 
 const LABEL_PX = 6.1, SIG_PX = 5.2;   // ~px per char: tick label, signature
 const AXIS_PX = 6.0;                  // ~px per char: axis label at 9px font
 const ROW_H = 11;
+const MARK_H = 8;                     // hover mode: the marker strip under the plot
 const DIM = 'var(--dl-dim, #5c6370)';
 const FAIL = 'var(--dl-fail, #f7768e)';
 
@@ -43,6 +41,12 @@ function injectStyle() {
 .dl-tick text { fill: currentColor; font-size: 9px; letter-spacing: 0.06em; }
 .dl-tick .sig { fill: ${DIM}; letter-spacing: 0; }
 .dl-run { fill: currentColor; opacity: 0.85; }
+.dl-root:hover { z-index: 1; }
+.dl-tickmark { fill: currentColor; cursor: default; }
+.dl-tickcol .dl-dash, .dl-tickcol .dl-tick { visibility: hidden; }
+.dl-tickcol:hover .dl-dash, .dl-tickcol:hover .dl-tick { visibility: visible; }
+.dl-tickhit { fill: transparent; pointer-events: none; }
+.dl-tickcol:hover .dl-tickhit { pointer-events: all; }
 `;
   document.head.appendChild(st);
   styleInjected = true;
@@ -50,15 +54,6 @@ function injectStyle() {
 
 function fmtStamp(ms, hour12 = false) {
   return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12 });
-}
-function fmtDur(ms) {
-  if (ms < 60000) return '<1m';
-  const m = Math.round(ms / 60000);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 48) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
-  const d = Math.floor(h / 24);
-  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
 }
 function defaultTooltip(b, bucketMs, hour12 = false) {
   const parts = [];
@@ -82,7 +77,13 @@ export class DotLattice {
   //               groups not listed get palette colors in first-seen order
   //   sides       {sideKey: 'up' | 'down'}               ({})
   //   sideOpacity {sideKey: 0..1}                        ({})
-  //   ticks       [{t, label, sig?, color?, title?}]
+  //   ticks       [{t, label, sig?, color?, title?}]; each label <g> carries
+  //               data-index = the tick's position in time order
+  //   tickLabels  'always' | 'hover'                  ('always')
+  //               hover: one marker per column under the plot; dash and
+  //               labels appear while the column is hovered
+  //   maxLabelRows rows reserved under the plot in hover mode (4); a
+  //               taller column overflows while hovered
   //   runs        [{start, end, color?, title?}]
   //   highlight   {from, to}
   //   axis        [{t, label}]
@@ -285,17 +286,43 @@ export class DotLattice {
     const y0 = TOP + rows.up * o.cell;            // baseline
     const lowY = y0 + rows.down * o.cell;         // bottom of down dots
 
-    // ticks: dashed annotation lines with collision-stacking labels
+    // ticks: dashed annotation lines with collision-stacking labels. Every
+    // tick carries its index in time order (data-index) so a caller can
+    // map a clicked label back without trusting DOM order. In hover mode
+    // a column's ticks collapse to one marker under the plot; the dash
+    // and the labels exist but stay hidden until that column is hovered,
+    // so a crowded week costs no label rows until asked.
+    const hover = o.tickLabels === 'hover';
     const ticks = (o.ticks ?? [])
       .filter((tk) => !zoomed || (toMs(tk.t) >= s.min && toMs(tk.t) <= s.max))
       .slice().sort((a, b) => toMs(a.t) - toMs(b.t))
-      .map((tk) => ({ ...tk, sig: tk.sig ?? '', cx: snap(x(toMs(tk.t))) }));
-    const placed = stackLabels(
-      ticks.map((it) => ({ ...it, w: String(it.label).length * LABEL_PX + String(it.sig).length * SIG_PX })),
-      width, o.gap
-    );
-    const labelRows = placed.reduce((n, tk) => Math.max(n, tk.row + 1), 0);
-    const labelY = lowY + 16;                     // first label baseline
+      .map((tk, i) => ({
+        ...tk, i, sig: tk.sig ?? '', cx: snap(x(toMs(tk.t))),
+        w: String(tk.label).length * LABEL_PX + String(tk.sig ?? '').length * SIG_PX,
+      }));
+    const columns = [];                           // hover mode: [{cx, ticks}]
+    let placed, labelRows;
+    if (hover) {
+      const byCx = new Map();
+      for (const it of ticks) {
+        if (!byCx.has(it.cx)) byCx.set(it.cx, []);
+        byCx.get(it.cx).push(it);
+      }
+      placed = [];
+      for (const [cx, its] of byCx) {
+        const col = stackLabels(its, width, o.gap);   // one cx: rows 0..n-1, straight down
+        columns.push({ cx, ticks: col });
+        placed.push(...col);
+      }
+      // reserve room for the busiest column, capped: a taller one overflows
+      // on hover (the root lifts above its siblings while hovered)
+      const tallest = columns.reduce((n, c) => Math.max(n, c.ticks.length), 0);
+      labelRows = Math.min(tallest, Math.max(1, o.maxLabelRows ?? 4));
+    } else {
+      placed = stackLabels(ticks, width, o.gap);
+      labelRows = placed.reduce((n, tk) => Math.max(n, tk.row + 1), 0);
+    }
+    const labelY = lowY + (hover ? MARK_H + 12 : 16);   // first label baseline
     const height = placed.length ? labelY + (labelRows - 1) * ROW_H + 4 : lowY + 4;
 
     const parts = [];
@@ -311,14 +338,33 @@ export class DotLattice {
       parts.push(`<rect class="dl-highlight" x="${x1}" y="${TOP}" width="${Math.max(x2 - x1, 2)}" height="${lowY - TOP}"/>`);
     }
 
-    // every dash painted before every label, so a dash running down to a
-    // lower row passes under the text above it, never through it
-    for (const tk of placed) {
-      parts.push(`<line class="dl-dash" style="color:${tk.color ?? DIM}" x1="${tk.cx}" x2="${tk.cx}" y1="${TOP}" y2="${labelY + tk.row * ROW_H - 9}"/>`);
-    }
-    for (const tk of placed) {
+    const tickLabel = (tk) => {
       const title = tk.title ? `<title>${esc(tk.title)}</title>` : '';
-      parts.push(`<g class="dl-tick" style="color:${tk.color ?? DIM}"><text x="${tk.tx}" y="${labelY + tk.row * ROW_H}" text-anchor="${tk.anchor}">${esc(tk.label)}${tk.sig ? `<tspan class="sig" dx="3">${esc(tk.sig)}</tspan>` : ''}</text>${title}</g>`);
+      return `<g class="dl-tick" data-index="${tk.i}" style="color:${tk.color ?? DIM}"><text x="${tk.tx}" y="${labelY + tk.row * ROW_H}" text-anchor="${tk.anchor}">${esc(tk.label)}${tk.sig ? `<tspan class="sig" dx="3">${esc(tk.sig)}</tspan>` : ''}</text>${title}</g>`;
+    };
+    if (hover) {
+      // one group per column: the marker is the hover target; the dash,
+      // the labels and a narrow hit corridor from marker to labels share
+      // the group so the pointer can travel down onto a label without
+      // leaving it
+      for (const c of columns) {
+        const first = c.ticks[0];
+        const bottom = labelY + (c.ticks.length - 1) * ROW_H + 4;
+        const titles = c.ticks.map((tk) => tk.title ?? String(tk.label)).join('\n');
+        parts.push(`<g class="dl-tickcol" style="color:${first.color ?? DIM}">` +
+          `<line class="dl-dash" x1="${c.cx}" x2="${c.cx}" y1="${TOP}" y2="${lowY + 3}"/>` +
+          `<rect class="dl-tickhit" x="${c.cx - 4}" y="${lowY}" width="8" height="${bottom - lowY}"/>` +
+          `<rect class="dl-tickmark" x="${c.cx - 2.5}" y="${lowY + 3}" width="5" height="5"><title>${esc(titles)}</title></rect>` +
+          c.ticks.map(tickLabel).join('') +
+          `</g>`);
+      }
+    } else {
+      // every dash painted before every label, so a dash running down to a
+      // lower row passes under the text above it, never through it
+      for (const tk of placed) {
+        parts.push(`<line class="dl-dash" style="color:${tk.color ?? DIM}" x1="${tk.cx}" x2="${tk.cx}" y1="${TOP}" y2="${labelY + tk.row * ROW_H - 9}"/>`);
+      }
+      for (const tk of placed) parts.push(tickLabel(tk));
     }
 
     // baseline, with runs of dots on it
